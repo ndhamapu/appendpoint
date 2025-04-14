@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Application Status Monitor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .form-card {
+      border-radius: 15px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .btn-group .btn {
+      min-width: 80px;
+    }
+    .table th, .table td {
+      vertical-align: middle;
+      text-align: center;
+    }
+    .status-dot {
+      height: 16px;
+      width: 16px;
+      display: inline-block;
+      border-radius: 50%;
+    }
+    .bg-green { background-color: #28a745; }
+    .bg-red { background-color: #dc3545; }
+    .bg-amber { background-color: #ffc107; }
+    .bg-grey { background-color: #6c757d; }
+  </style>
+</head>
+<body class="bg-light">
+
+<div class="container my-5">
+  <h2 class="text-center mb-4">Application Status Monitor</h2>
+
+  <!-- Input Card -->
+  <div class="p-4 bg-white form-card mx-auto mb-4" style="max-width: 800px;">
+    <div class="row g-2">
+      <div class="col-md-3">
+        <input type="text" class="form-control" placeholder="Short Name" id="shortName" required>
+      </div>
+      <div class="col-md-4">
+        <input type="text" class="form-control" placeholder="URL" id="url" required>
+      </div>
+      <div class="col-md-2">
+        <input type="number" class="form-control" placeholder="Interval (sec)" id="interval" required>
+      </div>
+      <div class="col-md-3 d-flex justify-content-between btn-group">
+        <button class="btn btn-success" onclick="addApp()">Add</button>
+        <button class="btn btn-primary" onclick="startPolling()">Start</button>
+        <button class="btn btn-danger" onclick="stopPolling()">Stop</button>
+        <button class="btn btn-warning" onclick="clearApps()">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Table -->
+  <div class="table-responsive">
+    <table class="table table-bordered shadow-sm bg-white">
+      <thead class="table-light">
+        <tr>
+          <th>Short Name</th>
+          <th>Application</th>
+          <th>Response Time</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="appTable">
+        {% for app in apps %}
+        <tr data-id="{{ app.Response_id }}">
+          <td>{{ app.shortName }}</td>
+          <td>{{ app.url }}</td>
+          <td id="response-{{ app.Response_id }}">Checking...</td>
+          <td id="status-{{ app.Response_id }}">
+            <span class="status-dot bg-grey"></span>
+          </td>
+          <td>
+            <button class="btn btn-danger btn-sm" onclick="deleteApp('{{ app.Response_id }}')">Delete</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  async function addApp() {
+    const data = {
+      shortName: document.getElementById('shortName').value,
+      url: document.getElementById('url').value,
+      interval: document.getElementById('interval').value
+    };
+    const res = await fetch('/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (res.ok) window.location.reload();
+  }
+
+  async function deleteApp(id) {
+    const res = await fetch(`/delete/${id}`, { method: 'DELETE' });
+    if (res.ok) window.location.reload();
+  }
+
+  function startPolling() {
+    localStorage.setItem('polling', 'true');
+    window.location.reload();
+  }
+
+  function stopPolling() {
+    localStorage.setItem('polling', 'false');
+    window.location.reload();
+  }
+
+  function clearApps() {
+    fetch('/clear', { method: 'DELETE' }).then(() => window.location.reload());
+  }
+
+  async function pollStatus() {
+    const pollingEnabled = localStorage.getItem('polling') === 'true';
+    if (!pollingEnabled) return;
+
+    const rows = document.querySelectorAll("#appTable tr");
+    for (let row of rows) {
+      const id = row.getAttribute("data-id");
+      if (!id) continue;
+
+      const statusCell = document.getElementById(`status-${id}`);
+      const responseCell = document.getElementById(`response-${id}`);
+      const dot = statusCell.querySelector(".status-dot");
+
+      try {
+        const res = await fetch(`/status/${id}`);
+        const result = await res.json();
+        const responseTime = parseInt(result.response_time);
+
+        // Update response time
+        responseCell.innerText = responseTime + " ms";
+
+        // Update status dot color
+        if (result.status === 'Up') {
+          if (!isNaN(responseTime) && responseTime > 1000) {
+            dot.className = "status-dot bg-amber";
+          } else {
+            dot.className = "status-dot bg-green";
+          }
+        } else {
+          dot.className = "status-dot bg-red";
+        }
+
+      } catch {
+        dot.className = "status-dot bg-grey";
+        responseCell.innerText = "N/A";
+      }
+    }
+  }
+
+  pollStatus();
+  setInterval(pollStatus, 5000);
+</script>
+
+</body>
+</html>
